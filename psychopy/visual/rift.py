@@ -365,6 +365,8 @@ class Rift(window.Window):
         for eye, fov in enumerate(eyeFovs):
             libovr.setEyeRenderFov(eye, fov)
 
+        self._eyeFovs = eyeFovs
+
         libovr.setHeadLocked(headLocked)  # enable head locked mode
         libovr.setHighQuality(highQuality)  # enable high quality mode
 
@@ -499,7 +501,7 @@ class Rift(window.Window):
             pass
 
         # shutdown the session completely
-        #libovr.shutdown()
+        libovr.shutdown()
         logging.info('LibOVR session shutdown cleanly.')
 
         try:
@@ -1781,7 +1783,7 @@ class Rift(window.Window):
                     libovr.destroyMirrorTexture()
                     libovr.destroyTextureSwapChain(libovr.TEXTURE_SWAP_CHAIN0)
                     libovr.destroy()
-                    #libovr.shutdown()  # avoid error
+                    libovr.shutdown()
 
                 _, msg = libovr.getLastErrorInfo()
                 raise LibOVRError(msg)
@@ -2051,14 +2053,30 @@ class Rift(window.Window):
         """Update or re-calculate projection matrices based on the current
         render descriptor configuration.
         """
+        leftFov, rightFov = self._eyeFovs
         if not self._monoscopic:
+            libovr.setEyeRenderFov(
+                libovr.EYE_LEFT,
+                leftFov,
+                self._nearClip,
+                self._farClip)
             libovr.getEyeProjectionMatrix(
                 libovr.EYE_LEFT,
                 self._projectionMatrix[0])
+            libovr.setEyeRenderFov(
+                libovr.EYE_RIGHT,
+                rightFov,
+                self._nearClip,
+                self._farClip)
             libovr.getEyeProjectionMatrix(
                 libovr.EYE_RIGHT,
                 self._projectionMatrix[1])
         else:
+            libovr.setEyeRenderFov(
+                libovr.EYE_LEFT,
+                leftFov,
+                self._nearClip,
+                self._farClip)
             libovr.getEyeProjectionMatrix(
                 libovr.EYE_LEFT,
                 self._projectionMatrix)
