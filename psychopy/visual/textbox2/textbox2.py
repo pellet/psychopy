@@ -1326,7 +1326,6 @@ class TextBox2(BaseVisualStim, PointerMixin, DraggingMixin, ContainerMixin, Colo
 
             gl.glActiveTexture(gl.GL_TEXTURE0)
             gl.glBindTexture(gl.GL_TEXTURE_2D, self.glFont.textureID)
-            gl.glEnable(gl.GL_TEXTURE_2D)
             gl.glDisable(gl.GL_DEPTH_TEST)
 
             prog = self.shader.handle
@@ -1354,7 +1353,6 @@ class TextBox2(BaseVisualStim, PointerMixin, DraggingMixin, ContainerMixin, Colo
 
             gl.glActiveTexture(gl.GL_TEXTURE0)
             gl.glBindTexture(gl.GL_TEXTURE_2D, 0)
-            gl.glDisable(gl.GL_TEXTURE_2D)
 
             if self.hasFocus:  # draw caret line
                 self.caret.draw()

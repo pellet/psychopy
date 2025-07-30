@@ -3322,10 +3322,39 @@ class Window():
 
         GL.glEnable(GL.GL_BLEND)
 
-        # check for GL_ARB_texture_float
+        # check for GL_ARB_texture_float or OpenGL 3.0+
         # (which is needed for shaders to be useful)
         # this needs to be done AFTER the context has been created
-        if not GL.gl_info.have_extension('GL_ARB_texture_float'):
+        # GL_ARB_texture_float was promoted to core in OpenGL 3.0
+        gl_version_str = GL.glGetString(GL.GL_VERSION)
+        if gl_version_str:
+            try:
+                # Handle different return types in pyglet v2
+                if hasattr(gl_version_str, 'decode'):
+                    version_str = gl_version_str.decode()
+                elif hasattr(gl_version_str, 'value'):
+                    # pyglet v2 returns a pointer object with .value attribute
+                    if hasattr(gl_version_str.value, 'decode'):
+                        version_str = gl_version_str.value.decode()
+                    else:
+                        version_str = str(gl_version_str.value)
+                else:
+                    # Try to get the string value from the pointer
+                    import ctypes
+                    version_str = ctypes.string_at(gl_version_str).decode('utf-8')
+                
+                # Extract major.minor version from version string
+                version_parts = version_str.split()[0].split('.')
+                gl_major = int(version_parts[0])
+                gl_minor = int(version_parts[1]) if len(version_parts) > 1 else 0
+                has_texture_float = (gl_major > 3) or (gl_major == 3 and gl_minor >= 0) or GL.gl_info.have_extension('GL_ARB_texture_float')
+            except (ValueError, IndexError, AttributeError, UnicodeDecodeError):
+                # Fallback to extension check if version parsing fails
+                has_texture_float = GL.gl_info.have_extension('GL_ARB_texture_float')
+        else:
+            has_texture_float = GL.gl_info.have_extension('GL_ARB_texture_float')
+        
+        if not has_texture_float:
             self._haveShaders = False
 
         GL.glClear(GL.GL_COLOR_BUFFER_BIT)

@@ -3460,10 +3460,7 @@ def createVAO(attribBuffers, indexBuffer=None, attribDivisors=None, legacy=False
         for key, val in attribDivisors.items():
             GL.glVertexAttribDivisor(key, val)
 
-    if _thisPlatform != 'Darwin':
-        GL.glBindVertexArray(0)
-    else:
-        GL.glBindVertexArrayAPPLE(0)
+    GL.glBindVertexArray(0)
 
     return VertexArrayInfo(vaoId.value,
                            count,
@@ -3473,11 +3470,8 @@ def createVAO(attribBuffers, indexBuffer=None, attribDivisors=None, legacy=False
                            legacy)
 
 
-# use the appropriate VAO binding function for the platform
-if _thisPlatform != 'Darwin':
-    _glBindVertexArray = GL.glBindVertexArray
-else:
-    _glBindVertexArray = GL.glBindVertexArrayAPPLE
+# use the standard VAO binding function (works across all platforms in pyglet v2)
+_glBindVertexArray = GL.glBindVertexArray
 
 
 def drawVAO(vao, mode=GL.GL_TRIANGLES, start=0, count=None, instanceCount=None,
@@ -3649,11 +3643,29 @@ def drawClientArrays(attribBuffers, mode=GL.GL_TRIANGLES, indexBuffer=None):
     mode = _getGLEnum(mode)
     if mode is None:
         raise ValueError('Invalid drawing mode specified.')
+    
+    # Handle deprecated drawing modes in modern OpenGL
+    # GL_QUADS (7) is not supported in modern OpenGL core profiles
+    if mode == 7:  # GL_QUADS
+        # Convert GL_QUADS to GL_TRIANGLES for modern OpenGL compatibility
+        # Each quad (4 vertices) becomes 2 triangles (6 vertices)
+        mode = GL.GL_TRIANGLES
+        convert_quads_to_triangles = True
+    else:
+        convert_quads_to_triangles = False
 
-    GL.glEnable(GL.GL_VERTEX_ARRAY)
+    # Note: GL.glEnable(GL.GL_VERTEX_ARRAY) is deprecated in modern OpenGL
+    # and causes GL_INVALID_ENUM error in core profiles. For client-side arrays
+    # in modern OpenGL, we need to create temporary VBOs.
     GL.glBindBuffer(GL.GL_ARRAY_BUFFER, 0)
     GL.glBindBuffer(GL.GL_ELEMENT_ARRAY_BUFFER, 0)
-    GL.glBindVertexArray(0)
+    
+    # Create temporary VAO and VBOs for modern OpenGL client-side array emulation
+    tempVAO = GL.GLuint()
+    GL.glGenVertexArrays(1, tempVAO)
+    GL.glBindVertexArray(tempVAO)
+    
+    tempVBOs = []
 
     useIndexBuffer = indexBuffer is not None
     if useIndexBuffer:
@@ -3698,36 +3710,89 @@ def drawClientArrays(attribBuffers, mode=GL.GL_TRIANGLES, indexBuffer=None):
             raise ValueError(
                 'Buffer {} must be 2D array.'.format(arrIdx))
         
+        # Convert quad vertices to triangle vertices if needed
+        if convert_quads_to_triangles:
+            # Each quad (4 vertices) becomes 2 triangles (6 vertices)
+            # Pattern: v0,v1,v2,v3 -> v0,v1,v2,v0,v2,v3
+            if buffer.shape[0] % 4 != 0:
+                raise ValueError('Buffer size must be multiple of 4 for GL_QUADS conversion.')
+            
+            num_quads = buffer.shape[0] // 4
+            triangle_buffer = np.zeros((num_quads * 6, buffer.shape[1]), dtype=buffer.dtype)
+            
+            for i in range(num_quads):
+                quad_start = i * 4
+                tri_start = i * 6
+                
+                # First triangle: v0, v1, v2
+                triangle_buffer[tri_start:tri_start+3] = buffer[quad_start:quad_start+3]
+                # Second triangle: v0, v2, v3
+                triangle_buffer[tri_start+3] = buffer[quad_start]     # v0
+                triangle_buffer[tri_start+4] = buffer[quad_start+2]   # v2
+                triangle_buffer[tri_start+5] = buffer[quad_start+3]   # v3
+            
+            buffer = triangle_buffer
+        
         numVertices = buffer.shape[0]
         
-        # enable and set attribute pointers
-        GL.glEnableVertexAttribArray(arrIdx)
+        # Create temporary VBO for this buffer in modern OpenGL
+        tempVBO = GL.GLuint()
+        GL.glGenBuffers(1, tempVBO)
+        GL.glBindBuffer(GL.GL_ARRAY_BUFFER, tempVBO)
         
+        # Upload buffer data to VBO
         arrayTypes = ARRAY_TYPES.get(buffer.dtype.type, None)
         if arrayTypes is None:
             raise ValueError('Unable to determine data type from buffer.')
-
+        
+        bufferSize = buffer.size * buffer.itemsize
+        GL.glBufferData(GL.GL_ARRAY_BUFFER, bufferSize, buffer.ctypes, GL.GL_STATIC_DRAW)
+        
+        # Set up vertex attribute pointer with VBO
+        GL.glEnableVertexAttribArray(arrIdx)
         GL.glVertexAttribPointer(
             arrIdx,
             size,
             arrayTypes[0],
             GL.GL_TRUE if normalize else GL.GL_FALSE,
             offset,
-            buffer.ctypes)
+            None)  # offset is now relative to VBO, not client memory
 
         boundArrays.append(arrIdx)
+        tempVBOs.append(tempVBO)
 
     # use the appropriate draw function
     if useIndexBuffer:
-        GL.glDrawElements(
-            mode, indexBuffer.size, GL.GL_UNSIGNED_INT, indexBuffer.ctypes)
+        # Create temporary index buffer VBO
+        tempIndexVBO = GL.GLuint()
+        GL.glGenBuffers(1, tempIndexVBO)
+        GL.glBindBuffer(GL.GL_ELEMENT_ARRAY_BUFFER, tempIndexVBO)
+        
+        indexBufferSize = indexBuffer.size * indexBuffer.itemsize
+        GL.glBufferData(GL.GL_ELEMENT_ARRAY_BUFFER, indexBufferSize, indexBuffer.ctypes, GL.GL_STATIC_DRAW)
+        
+        GL.glDrawElements(mode, indexBuffer.size, GL.GL_UNSIGNED_INT, None)
+        
+        # Clean up index buffer VBO
+        GL.glBindBuffer(GL.GL_ELEMENT_ARRAY_BUFFER, 0)
+        GL.glDeleteBuffers(1, tempIndexVBO)
     else:
         GL.glDrawArrays(mode, 0, numVertices)
 
     for arrIdx in boundArrays:  # unbind arrays
         GL.glDisableVertexAttribArray(arrIdx)
     
-    GL.glDisable(GL.GL_VERTEX_ARRAY)
+    # Clean up temporary VBOs and VAO, restore OpenGL state
+    GL.glBindBuffer(GL.GL_ARRAY_BUFFER, 0)
+    if tempVBOs:
+        GL.glDeleteBuffers(len(tempVBOs), (GL.GLuint * len(tempVBOs))(*tempVBOs))
+    
+    GL.glBindVertexArray(0)
+    GL.glDeleteVertexArrays(1, tempVAO)
+    
+    # Note: GL.glDisable(GL.GL_VERTEX_ARRAY) is deprecated in modern OpenGL
+    # and causes GL_INVALID_ENUM error in core profiles. Vertex attribute
+    # arrays are properly disabled above.
 
 
 # ---------------------------

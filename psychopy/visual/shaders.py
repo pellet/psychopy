@@ -40,8 +40,19 @@ class Shader:
             status = c_int()
             GL.glGetShaderiv(shader, GL.GL_COMPILE_STATUS, byref(status))
             if not status.value:
+                # Get the shader info log for detailed error information
+                log_length = c_int()
+                GL.glGetShaderiv(shader, GL.GL_INFO_LOG_LENGTH, byref(log_length))
+                
+                if log_length.value > 0:
+                    log_buffer = (c_char * log_length.value)()
+                    GL.glGetShaderInfoLog(shader, log_length.value, None, log_buffer)
+                    error_msg = log_buffer.value.decode('utf-8')
+                else:
+                    error_msg = "No additional error information available"
+                
                 GL.glDeleteShader(shader)
-                raise ValueError('Shader compilation failed')
+                raise ValueError(f'Shader compilation failed: {error_msg}')
             return shader
 
         self.handle = GL.glCreateProgram()
@@ -154,22 +165,34 @@ some shaders differ for FBO use if they're performing any signed math.
 """
 
 fragFBOtoFrame = """
-    uniform sampler2D texture;
+    #version 330
+    
+    // Input from vertex shader
+    in vec4 vertexColor;
+    in vec2 fragTexCoord0;
+    in vec2 fragTexCoord1;
+    in vec2 fragTexCoord2;
+    
+    // Uniforms
+    uniform sampler2D uTexture;
+    
+    // Output
+    out vec4 fragColor;
 
     float rand(vec2 seed){
         return fract(sin(dot(seed.xy ,vec2(12.9898,78.233))) * 43758.5453);
     }
 
     void main() {
-        vec4 textureFrag = texture2D(texture,gl_TexCoord[0].st);
-        gl_FragColor.rgb = textureFrag.rgb;
+        vec4 textureFrag = texture(uTexture, fragTexCoord0);
+        fragColor.rgb = textureFrag.rgb;
         //! if too high then show red/black noise
-        if ( gl_FragColor.r>1.0 || gl_FragColor.g>1.0 || gl_FragColor.b>1.0) {
-            gl_FragColor.rgb = vec3 (rand(gl_TexCoord[0].st), 0, 0);
+        if ( fragColor.r>1.0 || fragColor.g>1.0 || fragColor.b>1.0) {
+            fragColor.rgb = vec3 (rand(fragTexCoord0), 0, 0);
         }
         //! if too low then show red/black noise
-        else if ( gl_FragColor.r<0.0 || gl_FragColor.g<0.0 || gl_FragColor.b<0.0) {
-            gl_FragColor.rgb = vec3 (0, 0, rand(gl_TexCoord[0].st));
+        else if ( fragColor.r<0.0 || fragColor.g<0.0 || fragColor.b<0.0) {
+            fragColor.rgb = vec3 (0, 0, rand(fragTexCoord0));
         }
     }
     """
@@ -460,36 +483,88 @@ if USE_LEGACY_GL:
 else:
     # for stimuli with no texture (e.g. shapes)
     fragSignedColor = """
+        #version 330
+        
+        // Input from vertex shader
+        in vec4 vertexColor;
+        in vec2 fragTexCoord0;
+        in vec2 fragTexCoord1;
+        in vec2 fragTexCoord2;
+        
+        // Uniforms
         uniform vec4 uColor;
+        
+        // Output
+        out vec4 fragColor;
+        
         void main() {
-            gl_FragColor.rgb = ((uColor.rgb * 2.0 - 1.0) + 1.0) / 2.0;
-            gl_FragColor.a = uColor.a;
+            fragColor.rgb = ((uColor.rgb * 2.0 - 1.0) + 1.0) / 2.0;
+            fragColor.a = uColor.a;
         }
         """
     fragSignedColor_adding = """
+        #version 330
+        
+        // Input from vertex shader
+        in vec4 vertexColor;
+        in vec2 fragTexCoord0;
+        in vec2 fragTexCoord1;
+        in vec2 fragTexCoord2;
+        
+        // Uniforms
         uniform vec4 uColor;
+        
+        // Output
+        out vec4 fragColor;
+        
         void main() {
-            gl_FragColor.rgb = (uColor.rgb * 2.0 - 1.0) / 2.0;
-            gl_FragColor.a = uColor.a;
+            fragColor.rgb = (uColor.rgb * 2.0 - 1.0) / 2.0;
+            fragColor.a = uColor.a;
         }
         """
     # for stimuli with just a colored texture
     fragSignedColorTex = """
+        #version 330
+        
+        // Input from vertex shader
+        in vec4 vertexColor;
+        in vec2 fragTexCoord0;
+        in vec2 fragTexCoord1;
+        in vec2 fragTexCoord2;
+        
+        // Uniforms
         uniform vec4 uColor;
         uniform sampler2D uTexture;
+        
+        // Output
+        out vec4 fragColor;
+        
         void main() {
-            vec4 textureFrag = texture2D(uTexture, gl_TexCoord[0].st);
-            gl_FragColor.rgb = (textureFrag.rgb * (uColor.rgb * 2.0 - 1.0) + 1.0) / 2.0;
-            gl_FragColor.a = uColor.a * textureFrag.a;
+            vec4 textureFrag = texture(uTexture, fragTexCoord0);
+            fragColor.rgb = (textureFrag.rgb * (uColor.rgb * 2.0 - 1.0) + 1.0) / 2.0;
+            fragColor.a = uColor.a * textureFrag.a;
         }
         """
     fragSignedColorTex_adding = """
+        #version 330
+        
+        // Input from vertex shader
+        in vec4 vertexColor;
+        in vec2 fragTexCoord0;
+        in vec2 fragTexCoord1;
+        in vec2 fragTexCoord2;
+        
+        // Uniforms
         uniform vec4 uColor;
         uniform sampler2D uTexture;
+        
+        // Output
+        out vec4 fragColor;
+        
         void main() {
-            vec4 textureFrag = texture2D(uTexture, gl_TexCoord[0].st);
-            gl_FragColor.rgb = textureFrag.rgb * (uColor.rgb * 2.0 - 1.0) / 2.0;
-            gl_FragColor.a = uColor.a * textureFrag.a;
+            vec4 textureFrag = texture(uTexture, fragTexCoord0);
+            fragColor.rgb = textureFrag.rgb * (uColor.rgb * 2.0 - 1.0) / 2.0;
+            fragColor.a = uColor.a * textureFrag.a;
         }
         """
     # the shader for pyglet fonts doesn't use multitextures - just one texture
@@ -504,107 +579,232 @@ else:
     # """
 
     fragSignedColorTexFont = """
-        uniform sampler2D texture;
+        #version 330
+        
+        // Input from vertex shader
+        in vec4 vertexColor;
+        in vec2 fragTexCoord0;
+        in vec2 fragTexCoord1;
+        in vec2 fragTexCoord2;
+        
+        // Uniforms
+        uniform sampler2D uTexture;
         uniform vec3 rgb;
+        
+        // Output
+        out vec4 fragColor;
+        
         void main() {
-            vec4 textureFrag = texture2D(texture,gl_TexCoord[0].st);
-            gl_FragColor.rgb=rgb;
-            gl_FragColor.a = gl_Color.a*textureFrag.a;
+            vec4 textureFrag = texture(uTexture, fragTexCoord0);
+            fragColor.rgb = rgb;
+            fragColor.a = vertexColor.a * textureFrag.a;
         }
     """
 
     # for stimuli with a colored texture and a mask (gratings, etc.)
     fragSignedColorTexMask = """
+        #version 330
+        
+        // Input from vertex shader
+        in vec4 vertexColor;
+        in vec2 fragTexCoord0;
+        in vec2 fragTexCoord1;
+        in vec2 fragTexCoord2;
+        
+        // Uniforms
         uniform vec4 uColor;
         uniform sampler2D uTexture, uMask;
+        
+        // Output
+        out vec4 fragColor;
+        
         void main() {
-            vec4 textureFrag = texture2D(uTexture, gl_TexCoord[0].st);
-            vec4 maskFrag = texture2D(uMask, gl_TexCoord[1].st);
-            gl_FragColor.a = uColor.a * maskFrag.a * textureFrag.a;
-            gl_FragColor.rgb = (textureFrag.rgb * (uColor.rgb * 2.0 - 1.0) + 1.0) / 2.0;
+            vec4 textureFrag = texture(uTexture, fragTexCoord0);
+            vec4 maskFrag = texture(uMask, fragTexCoord1);
+            fragColor.a = uColor.a * maskFrag.a * textureFrag.a;
+            fragColor.rgb = (textureFrag.rgb * (uColor.rgb * 2.0 - 1.0) + 1.0) / 2.0;
         }
         """
     fragSignedColorTexMask_adding = """
+        #version 330
+        
+        // Input from vertex shader
+        in vec4 vertexColor;
+        in vec2 fragTexCoord0;
+        in vec2 fragTexCoord1;
+        in vec2 fragTexCoord2;
+        
+        // Uniforms
         uniform vec4 uColor;
         uniform sampler2D uTexture, uMask;
+        
+        // Output
+        out vec4 fragColor;
+        
         void main() {
-            vec4 textureFrag = texture2D(uTexture, gl_TexCoord[0].st);
-            vec4 maskFrag = texture2D(uMask, gl_TexCoord[1].st);
-            gl_FragColor.a = uColor.a * maskFrag.a * textureFrag.a;
-            gl_FragColor.rgb = textureFrag.rgb * (uColor.rgb * 2.0 - 1.0) / 2.0;
+            vec4 textureFrag = texture(uTexture, fragTexCoord0);
+            vec4 maskFrag = texture(uMask, fragTexCoord1);
+            fragColor.a = uColor.a * maskFrag.a * textureFrag.a;
+            fragColor.rgb = textureFrag.rgb * (uColor.rgb * 2.0 - 1.0) / 2.0;
         }
         """
     # RadialStim uses a 1D mask with a 2D texture
     fragSignedColorTexMask1D = """
+        #version 330
+        
+        // Input from vertex shader
+        in vec4 vertexColor;
+        in vec2 fragTexCoord0;
+        in vec2 fragTexCoord1;
+        in vec2 fragTexCoord2;
+        
+        // Uniforms
         uniform vec4 uColor;
         uniform sampler2D uTexture;
         uniform sampler1D uMask;
+        
+        // Output
+        out vec4 fragColor;
+        
         void main() {
-            vec4 textureFrag = texture2D(uTexture, gl_TexCoord[0].st);
-            vec4 maskFrag = texture1D(uMask, gl_TexCoord[1].s);
-            gl_FragColor.a = uColor.a * maskFrag.a * textureFrag.a;
-            gl_FragColor.rgb = (textureFrag.rgb * (uColor.rgb * 2.0 - 1.0) + 1.0) / 2.0;
+            vec4 textureFrag = texture(uTexture, fragTexCoord0);
+            vec4 maskFrag = texture(uMask, fragTexCoord1.s);
+            fragColor.a = uColor.a * maskFrag.a * textureFrag.a;
+            fragColor.rgb = (textureFrag.rgb * (uColor.rgb * 2.0 - 1.0) + 1.0) / 2.0;
         }
         """
     fragSignedColorTexMask1D_adding = """
+        #version 330
+        
+        // Input from vertex shader
+        in vec4 vertexColor;
+        in vec2 fragTexCoord0;
+        in vec2 fragTexCoord1;
+        in vec2 fragTexCoord2;
+        
+        // Uniforms
         uniform vec4 uColor;
         uniform sampler2D uTexture;
         uniform sampler1D uMask;
+        
+        // Output
+        out vec4 fragColor;
+        
         void main() {
-            vec4 textureFrag = texture2D(uTexture, gl_TexCoord[0].st);
-            vec4 maskFrag = texture1D(uMask, gl_TexCoord[1].s);
-            gl_FragColor.a = uColor.a * maskFrag.a * textureFrag.a;
-            gl_FragColor.rgb = textureFrag.rgb * (uColor.rgb * 2.0 - 1.0) / 2.0;
+            vec4 textureFrag = texture(uTexture, fragTexCoord0);
+            vec4 maskFrag = texture(uMask, fragTexCoord1.s);
+            fragColor.a = uColor.a * maskFrag.a * textureFrag.a;
+            fragColor.rgb = textureFrag.rgb * (uColor.rgb * 2.0 - 1.0) / 2.0;
         }
         """
     # imageStim is providing its texture unsigned
     fragImageStim = """
+        #version 330
+        
+        // Input from vertex shader
+        in vec4 vertexColor;
+        in vec2 fragTexCoord0;
+        in vec2 fragTexCoord1;
+        in vec2 fragTexCoord2;
+        
+        // Uniforms
         uniform vec4 uColor;
         uniform sampler2D uTexture;
         uniform sampler2D uMask;
+        
+        // Output
+        out vec4 fragColor;
 
         void main() {
-            vec4 textureFrag = texture2D(uTexture, gl_TexCoord[0].st);
-            vec4 maskFrag = texture2D(uMask, gl_TexCoord[1].st);
-            gl_FragColor.a = uColor.a * maskFrag.a * textureFrag.a;
-            gl_FragColor.rgb = ((textureFrag.rgb * 2.0 - 1.0) * (uColor.rgb * 2.0 - 1.0) + 1.0) / 2.0;
+            vec4 textureFrag = texture(uTexture, fragTexCoord0);
+            vec4 maskFrag = texture(uMask, fragTexCoord1);
+            fragColor.a = uColor.a * maskFrag.a * textureFrag.a;
+            fragColor.rgb = ((textureFrag.rgb * 2.0 - 1.0) * (uColor.rgb * 2.0 - 1.0) + 1.0) / 2.0;
         }
         """
     # imageStim is providing its texture unsigned
     fragImageStim_adding = """
+        #version 330
+        
+        // Input from vertex shader
+        in vec4 vertexColor;
+        in vec2 fragTexCoord0;
+        in vec2 fragTexCoord1;
+        in vec2 fragTexCoord2;
+        
+        // Uniforms
         uniform vec4 uColor;
         uniform sampler2D uTexture;
         uniform sampler2D uMask;
+        
+        // Output
+        out vec4 fragColor;
 
         void main() {
-            vec4 textureFrag = texture2D(uTexture, gl_TexCoord[0].st);
-            vec4 maskFrag = texture2D(uMask, gl_TexCoord[1].st);
-            gl_FragColor.a = uColor.a * maskFrag.a * textureFrag.a;
-            gl_FragColor.rgb = (textureFrag.rgb * 2.0 - 1.0) * (uColor.rgb * 2.0 - 1.0) / 2.0;
+            vec4 textureFrag = texture(uTexture, fragTexCoord0);
+            vec4 maskFrag = texture(uMask, fragTexCoord1);
+            fragColor.a = uColor.a * maskFrag.a * textureFrag.a;
+            fragColor.rgb = (textureFrag.rgb * 2.0 - 1.0) * (uColor.rgb * 2.0 - 1.0) / 2.0;
         }
         """
 
     # legacy vertex shader for pyglet text rendering and FBO blit
     vertSimpleText = """
+        #version 330
+        
+        // Input attributes
+        layout(location = 0) in vec4 position;
+        layout(location = 3) in vec4 color;
+        layout(location = 8) in vec2 texCoord0;
+        layout(location = 9) in vec2 texCoord1;
+        layout(location = 10) in vec2 texCoord2;
+        
+        // Uniforms
+        uniform mat4 uModelViewMatrix;
+        uniform mat4 uProjectionMatrix;
+        
+        // Output to fragment shader
+        out vec4 vertexColor;
+        out vec2 fragTexCoord0;
+        out vec2 fragTexCoord1;
+        out vec2 fragTexCoord2;
+        
         void main() {
-                gl_FrontColor = gl_Color;
-                gl_TexCoord[0] = gl_MultiTexCoord0;
-                gl_TexCoord[1] = gl_MultiTexCoord1;
-                gl_TexCoord[2] = gl_MultiTexCoord2;
-                gl_Position =  ftransform();
+                vertexColor = color;
+                fragTexCoord0 = texCoord0;
+                fragTexCoord1 = texCoord1;
+                fragTexCoord2 = texCoord2;
+                gl_Position = uProjectionMatrix * uModelViewMatrix * position;
         }
         """
 
     vertSimple = """
+        #version 330
+        
+        // Input attributes using PsychoPy's vertex attribute locations
+        layout(location = 0) in vec4 position;      // VERTEX_ATTRIB_POSITION
+        layout(location = 3) in vec4 color;         // VERTEX_ATTRIB_COLOR
+        layout(location = 8) in vec2 texCoord0;     // VERTEX_ATTRIB_MULTITEXCOORD0
+        layout(location = 9) in vec2 texCoord1;     // VERTEX_ATTRIB_MULTITEXCOORD1
+        layout(location = 10) in vec2 texCoord2;    // VERTEX_ATTRIB_MULTITEXCOORD2
+        
+        // Uniforms
         uniform vec4 uColor;
-        uniform mat4 uModelViewMatrix;  // combined for 2D rendering
+        uniform mat4 uModelViewMatrix;
         uniform mat4 uProjectionMatrix;
+        
+        // Output to fragment shader
+        out vec4 vertexColor;
+        out vec2 fragTexCoord0;
+        out vec2 fragTexCoord1;
+        out vec2 fragTexCoord2;
+        
         void main() {
-                gl_FrontColor = uColor;
-                gl_TexCoord[0] = gl_MultiTexCoord0;
-                gl_TexCoord[1] = gl_MultiTexCoord1;
-                gl_TexCoord[2] = gl_MultiTexCoord2;
-                gl_Position = uProjectionMatrix * uModelViewMatrix * gl_Vertex;
+            vertexColor = uColor;
+            fragTexCoord0 = texCoord0;
+            fragTexCoord1 = texCoord1;
+            fragTexCoord2 = texCoord2;
+            gl_Position = uProjectionMatrix * uModelViewMatrix * position;
         }
     """
 
@@ -761,27 +961,49 @@ else:
     """
 
     fragTextBox2 = '''
+    #version 330
+    
+    // Input from vertex shader
+    in vec4 vertexColor;
+    in vec2 fragTexCoord0;
+    
+    // Uniforms
     uniform sampler2D uTexture;
     uniform vec4 uColor;
+    
+    // Output
+    out vec4 fragColor;
+    
     void main() 
     {
-        vec2 uv      = gl_TexCoord[0].xy;
-        vec4 current = texture2D(uTexture, uv);
+        vec2 uv = fragTexCoord0;
+        vec4 current = texture(uTexture, uv);
 
         float r = current.r;
         float g = current.g;
         float b = current.b;
         float a = current.a;
-        gl_FragColor = vec4(uColor.rgb, (r + g + b) / 2.);
+        fragColor = vec4(uColor.rgb, (r + g + b) / 2.);
     }
     '''
 
     fragTextBox2alpha = '''
+    #version 330
+    
+    // Input from vertex shader
+    in vec4 vertexColor;
+    in vec2 fragTexCoord0;
+    
+    // Uniforms
     uniform sampler2D uTexture;
     uniform vec4 uColor;
+    
+    // Output
+    out vec4 fragColor;
+    
     void main() 
     {
-        vec4 current = texture2D(uTexture, gl_TexCoord[0].st);
-        gl_FragColor = vec4(uColor.rgb, current.a);
+        vec4 current = texture(uTexture, fragTexCoord0);
+        fragColor = vec4(uColor.rgb, current.a);
     }
     '''

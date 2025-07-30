@@ -43,8 +43,11 @@ retinaContext = None  # it will be set to an actual context if needed
 # get the default display
 if pyglet.version < '1.4':
     _default_display_ = pyglet.window.get_platform().get_default_display()
-else:
+elif pyglet.version < '2.0':
     _default_display_ = pyglet.canvas.get_display()
+else:
+    # pyglet v2+ uses pyglet.display.get_display()
+    _default_display_ = pyglet.display.get_display()
 
 USE_LEGACY_GL = pyglet.version < '2.0'
 
@@ -186,16 +189,35 @@ class PygletBackend(BaseBackend):
 
         skip_screen_warn = False
         if platform.system() == 'Linux':
-            from pyglet.canvas.xlib import NoSuchDisplayException
+            # Handle Linux display initialization with version compatibility
             try:
-                display = pyglet.canvas.Display(x_screen=win.screen)
-                # in this case, we'll only get a single x-screen back
-                skip_screen_warn = True
-            except NoSuchDisplayException:
-                # Maybe xinerama? Try again and get the specified screen later
-                display = pyglet.canvas.Display(x_screen=0)
-
-            allScrs = display.get_screens()
+                if pyglet.version < '2.0':
+                    # pyglet v1.x uses canvas.xlib
+                    from pyglet.canvas.xlib import NoSuchDisplayException
+                    try:
+                        display = pyglet.canvas.Display(x_screen=win.screen)
+                        # in this case, we'll only get a single x-screen back
+                        skip_screen_warn = True
+                    except NoSuchDisplayException:
+                        # Maybe xinerama? Try again and get the specified screen later
+                        display = pyglet.canvas.Display(x_screen=0)
+                else:
+                    # pyglet v2+ uses display.xlib (if available) or falls back to default
+                    try:
+                        from pyglet.display.xlib import NoSuchDisplayException
+                        try:
+                            display = pyglet.display.Display(x_screen=win.screen)
+                            skip_screen_warn = True
+                        except NoSuchDisplayException:
+                            display = pyglet.display.Display(x_screen=0)
+                    except ImportError:
+                        # If xlib module doesn't exist in this pyglet v2 build, use default
+                        display = _default_display_
+                
+                allScrs = display.get_screens()
+            except (ImportError, AttributeError):
+                # Fallback to default display if Linux-specific handling fails
+                allScrs = _default_display_.get_screens()
         else:
             allScrs = _default_display_.get_screens()
 

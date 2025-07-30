@@ -306,9 +306,9 @@ class _TextureAtlas:
         gl.glTexParameteri(gl.GL_TEXTURE_2D,
                            gl.GL_TEXTURE_MIN_FILTER, gl.GL_LINEAR)
         if self.format == 'alpha':
-            gl.glTexImage2D(gl.GL_TEXTURE_2D, 0, gl.GL_ALPHA,
+            gl.glTexImage2D(gl.GL_TEXTURE_2D, 0, gl.GL_RED,
                             self.width, self.height, 0,
-                            gl.GL_ALPHA, gl.GL_UNSIGNED_BYTE, self.data.ctypes)
+                            gl.GL_RED, gl.GL_UNSIGNED_BYTE, self.data.ctypes)
         else:
             gl.glTexImage2D(gl.GL_TEXTURE_2D, 0, gl.GL_RGB,
                             self.width, self.height, 0,
