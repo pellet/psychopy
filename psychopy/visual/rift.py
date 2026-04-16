@@ -434,19 +434,6 @@ class Rift(window.Window):
         # on-screen window.
         self.buffer = None
 
-        # View matrices, these are updated every frame based on computed head
-        # position. Projection matrices need only to be computed once.
-        if not self._monoscopic:
-            self._projectionMatrix = [
-                np.identity(4, dtype=np.float32),
-                np.identity(4, dtype=np.float32)]
-            self._viewMatrix = [
-                np.identity(4, dtype=np.float32),
-                np.identity(4, dtype=np.float32)]
-        else:
-            self._projectionMatrix = np.identity(4, dtype=np.float32)
-            self._viewMatrix = np.identity(4, dtype=np.float32)
-
         # disable v-sync since the HMD runs at a different frequency
         kwargs['waitBlanking'] = False
 
@@ -471,6 +458,19 @@ class Rift(window.Window):
 
         # call up a new window object
         super(Rift, self).__init__(*args, **kwargs)
+
+        # In stereo mode psychxr's getEye*Matrix calls require ndim=2 and
+        # downstream per-eye rendering indexes [0]/[1], so _projectionMatrix
+        # and _viewMatrix must be a list of two 4x4 matrices rather than the
+        # single 4x4 identity Window.__init__ assigns. _viewMatrix is
+        # populated per-frame by calcEyePoses.
+        if not self._monoscopic:
+            self._projectionMatrix = [
+                np.identity(4, dtype=np.float32),
+                np.identity(4, dtype=np.float32)]
+            self._viewMatrix = [
+                np.identity(4, dtype=np.float32),
+                np.identity(4, dtype=np.float32)]
 
         self._updateProjectionMatrix()
 
@@ -2061,6 +2061,11 @@ class Rift(window.Window):
         render descriptor configuration.
         """
         if not self._monoscopic:
+            # Window.__init__ calls this via setOrthographicView before
+            # Rift.__init__ has restored the stereo list form. Skip until
+            # the list form is in place — Rift.__init__ calls again after.
+            if not isinstance(self._projectionMatrix, list):
+                return
             libovr.getEyeProjectionMatrix(
                 libovr.EYE_LEFT,
                 self._projectionMatrix[0])
